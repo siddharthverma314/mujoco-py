@@ -8,6 +8,7 @@ from distutils.core import Extension
 from distutils.dist import Distribution
 from distutils.sysconfig import customize_compiler
 from os.path import abspath, dirname, exists, join, getmtime
+from os import getenv
 from shutil import move
 
 import numpy as np
@@ -38,22 +39,16 @@ MuJoCo comes with its own version of GLFW, so it's preferable to use that one.
 The easy solution is to `import mujoco_py` _before_ `import glfw`.
 ''')
 
-    if sys.platform == 'darwin':
-        Builder = MacExtensionBuilder
-    elif sys.platform == 'linux':
-        if exists('/usr/local/nvidia/lib64'):
-            Builder = LinuxGPUExtensionBuilder
-        else:
-            Builder = LinuxCPUExtensionBuilder
-    elif sys.platform.startswith("win"):
-        Builder = WindowsExtensionBuilder
+    if getenv('MUJOCO_BUILD_GPU'):
+        Builder = LinuxGPUExtensionBuilder
     else:
-        raise RuntimeError("Unsupported platform %s" % sys.platform)
+        Builder = LinuxCPUExtensionBuilder
 
     builder = Builder(mjpro_path)
     cext_so_path = builder.get_so_file_path()
     if not exists(cext_so_path):
         cext_so_path = builder.build()
+        os.system('autoPatchelf ' + cext_so_path)
     mod = imp.load_dynamic("cymj", cext_so_path)
     return mod
 
@@ -146,14 +141,6 @@ class MujocoExtensionBuilder():
             self.__class__.__name__.lower()))
 
 
-class WindowsExtensionBuilder(MujocoExtensionBuilder):
-
-    def __init__(self, mjpro_path):
-        super().__init__(mjpro_path)
-        os.environ["PATH"] += ";" + join(mjpro_path, "bin")
-        self.extension.sources.append(self.CYMJ_DIR_PATH + "/gl/dummyshim.c")
-
-
 class LinuxCPUExtensionBuilder(MujocoExtensionBuilder):
 
     def __init__(self, mjpro_path):
@@ -183,72 +170,6 @@ class LinuxGPUExtensionBuilder(MujocoExtensionBuilder):
         fix_shared_library(so_file_path, 'libEGL.so',
                            join(nvidia_lib_dir, 'libEGL.so.1'))
         return so_file_path
-
-
-class MacExtensionBuilder(MujocoExtensionBuilder):
-
-    def __init__(self, mjpro_path):
-        super().__init__(mjpro_path)
-
-        self.extension.sources.append(self.CYMJ_DIR_PATH + "/gl/dummyshim.c")
-        self.extension.libraries.extend(['glfw.3'])
-        self.extension.define_macros = [('ONMAC', None)]
-        self.extension.runtime_library_dirs = [join(mjpro_path, 'bin')]
-
-    def _build_impl(self):
-        # Prefer GCC 6 for now since GCC 7 may behave differently.
-        c_compilers = ['/usr/local/bin/gcc-6', '/usr/local/bin/gcc-7']
-        available_c_compiler = None
-        for c_compiler in c_compilers:
-            if distutils.spawn.find_executable(c_compiler) is not None:
-                available_c_compiler = c_compiler
-                break
-        if available_c_compiler is None:
-            raise RuntimeError(
-                'Could not find GCC 6 or GCC 7 executable.\n\n'
-                'HINT: On OS X, install GCC 6 with '
-                '`brew install gcc --without-multilib`.')
-        os.environ['CC'] = available_c_compiler
-
-        so_file_path = super()._build_impl()
-        del os.environ['CC']
-        return self.manually_link_libraries(so_file_path)
-
-    def manually_link_libraries(self, raw_cext_dll_path):
-        root, ext = os.path.splitext(raw_cext_dll_path)
-        final_cext_dll_path = root + '_final' + ext
-
-        # If someone else already built the final DLL, don't bother
-        # recreating it here, even though this should still be idempotent.
-        if (exists(final_cext_dll_path) and
-                getmtime(final_cext_dll_path) >= getmtime(raw_cext_dll_path)):
-            return final_cext_dll_path
-
-        tmp_final_cext_dll_path = final_cext_dll_path + '~'
-        shutil.copyfile(raw_cext_dll_path, tmp_final_cext_dll_path)
-
-        mj_bin_path = join(self.mjpro_path, 'bin')
-
-        # Fix the rpath of the generated library -- i lost the Stackoverflow
-        # reference here
-        from_mujoco_path = '@executable_path/libmujoco150.dylib'
-        to_mujoco_path = '%s/libmujoco150.dylib' % mj_bin_path
-        subprocess.check_call(['install_name_tool',
-                               '-change',
-                               from_mujoco_path,
-                               to_mujoco_path,
-                               tmp_final_cext_dll_path])
-
-        from_glfw_path = 'libglfw.3.dylib'
-        to_glfw_path = os.path.join(mj_bin_path, 'libglfw.3.dylib')
-        subprocess.check_call(['install_name_tool',
-                               '-change',
-                               from_glfw_path,
-                               to_glfw_path,
-                               tmp_final_cext_dll_path])
-
-        os.rename(tmp_final_cext_dll_path, final_cext_dll_path)
-        return final_cext_dll_path
 
 
 class MujocoException(Exception):
