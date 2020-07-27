@@ -2,23 +2,10 @@
 import importlib.util
 from distutils.command.build import build as DistutilsBuild
 from os.path import abspath, join, dirname, realpath
-from setuptools import find_packages, setup
-
-with open(join("mujoco_py", "version.py")) as version_file:
-    exec(version_file.read())
-
-
-class Build(DistutilsBuild):
-    def run(self):
-        # Pre-compile the Cython
-        current_path = abspath(dirname(__file__))
-        builder_path = join(current_path, 'mujoco_py', 'builder.py')
-        spec = importlib.util.spec_from_file_location(
-            "mujoco_py.builder", builder_path)
-        builder = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(builder)
-
-        DistutilsBuild.run(self)
+from setuptools import find_packages, setup, Extension
+import numpy as np
+import os
+from Cython.Build import cythonize
 
 
 def read_requirements_file(filename):
@@ -27,25 +14,39 @@ def read_requirements_file(filename):
         return [line.strip() for line in f]
 
 
-packages = find_packages()
-# Ensure that we don't pollute the global namespace.
-for p in packages:
-    assert p == 'mujoco_py' or p.startswith('mujoco_py.')
+cpu_extension = Extension(
+    'mujoco_py.cymj',
+    sources=["mujoco_py/cymj.pyx", "mujoco_py/gl/osmesashim.c"],
+    include_dirs=[np.get_include()],
+    libraries=['mujoco150', 'glewosmesa', 'OSMesa'],
+    extra_compile_args=['-fopenmp'],
+    extra_link_args=['-fopenmp'],
+    language='c'
+)
+
+gpu_extension = Extension(
+    'mujoco_py.cymj',
+    sources=["mujoco_py/cymj.pyx", "mujoco_py/gl/eglshim.c"],
+    include_dirs=[np.get_include(), "mujoco_py/vendor/egl"],
+    libraries=['mujoco150', 'glewegl'],
+    extra_compile_args=['-fopenmp'],
+    extra_link_args=['-fopenmp'],
+    language='c'
+)
+
+# read environment variables
+extension = gpu_extension if os.getenv('MUJOCO_BUILD_GPU') else cpu_extension
 
 setup(
     name='mujoco-py',
-    version=__version__,  # noqa
+    version='1.50.1.1',
     author='OpenAI Robotics Team',
     author_email='robotics@openai.com',
     url='https://github.com/openai/mujoco-py',
-    packages=packages,
+    packages=find_packages(),
     include_package_data=True,
     install_requires=read_requirements_file('requirements.txt'),
-    tests_require=read_requirements_file('requirements.dev.txt'),
-    # Add requirements for mujoco_py/builder.py here since there's no
-    # guarantee that they've been installed before this setup script
-    # is run. (The install requirements only guarantee that those packages
-    # are installed as part of installation. No promises about order.)
     setup_requires=read_requirements_file('requirements.txt'),
-    cmdclass={'build': Build},
+    tests_require=read_requirements_file('requirements.dev.txt'),
+    ext_modules=cythonize(extension, build_dir="mujoco_py/generated"),
 )

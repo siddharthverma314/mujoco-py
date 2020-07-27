@@ -682,9 +682,7 @@ def test_multiprocess():
 
 def import_process(queue):
     try:
-        from mujoco_py import builder
-        mjpro_path, key_path = builder.discover_mujoco()
-        builder.load_cython_ext(mjpro_path)
+        import mujoco.cymj
     except Exception as e:
         queue.put(False)
     else:

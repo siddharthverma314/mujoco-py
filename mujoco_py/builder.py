@@ -46,9 +46,8 @@ The easy solution is to `import mujoco_py` _before_ `import glfw`.
 
     builder = Builder(mjpro_path)
     cext_so_path = builder.get_so_file_path()
-    if not exists(cext_so_path):
-        cext_so_path = builder.build()
-        os.system('autoPatchelf ' + cext_so_path)
+    #if not exists(cext_so_path):
+    #    cext_so_path = builder.build()
     mod = imp.load_dynamic("cymj", cext_so_path)
     return mod
 
@@ -213,8 +212,8 @@ class ignore_mujoco_warnings:
         cymj.set_warning_callback(self.prev_user_warning)
 
 
-mjpro_path, key_path = discover_mujoco()
-cymj = load_cython_ext(mjpro_path)
+key_path = discover_mujoco()
+from mujoco_py import cymj
 
 
 # Trick to expose all mj* functions from mujoco in mujoco_py.*

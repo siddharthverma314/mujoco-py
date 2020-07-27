@@ -1,19 +1,8 @@
 import os
 import sys
 from abc import ABCMeta, abstractmethod
-from mujoco_py.utils import discover_mujoco
-
-
-def _add_mujoco_bin_to_dyld_library_path():
-    mujoco_path, _ = discover_mujoco()
-    bin_path = os.path.join(mujoco_path, "bin")
-    old_dyld_library_path = os.getenv("DYLD_LIBRARY_PATH", "")
-    os.environ["DYLD_LIBRARY_PATH"] = "{}:{}".format(
-        bin_path, old_dyld_library_path)
-
 
 try:
-    _add_mujoco_bin_to_dyld_library_path()
     import glfw
 except ImportError:
     pass
@@ -107,12 +96,6 @@ class GlfwContext(OpenGLContext):
             self._width = target_width
             self._height = target_height
             glfw.set_window_size(self.window, target_width, target_height)
-
-            # HAX: When running on a Mac with retina screen, the size
-            # sometimes doubles
-            width, height = glfw.get_framebuffer_size(self.window)
-            if target_width != width:
-                glfw.set_window_size(self.window, target_width // 2, target_height // 2)
 
     @staticmethod
     def _glfw_error_callback(error_code, description):

@@ -1,5 +1,5 @@
 import copy
-from os.path import join, expanduser
+from os.path import join, expanduser, dirname, realpath
 from os import getenv
 
 import numpy as np
@@ -50,9 +50,7 @@ def discover_mujoco():
     Currently assumes path is in ~/.mujoco
 
     Returns:
-    - mjpro_path (str): Path to MuJoCo Pro 1.50 directory.
     - key_path (str): Path to the MuJoCo license key.
     """
-    key_path = getenv("MUJOCO_MJKEY_PATH")
-    mjpro_path = getenv("MUJOCO_MJPRO_PATH")
-    return (mjpro_path, key_path)
+
+    return join(dirname(realpath(__file__)), "mjkey.txt")
